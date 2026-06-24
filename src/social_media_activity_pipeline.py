@@ -224,7 +224,7 @@ def discretize_numeric_columns(
     return transformed
 
 
-def create_binary_matrix(df: pd.DataFrame, sparse: bool = True) -> pd.DataFrame:
+def create_binary_matrix(df: pd.DataFrame, sparse: bool = False) -> pd.DataFrame:
     """Create a one-hot encoded binary matrix for association-rule mining."""
     encoded = pd.get_dummies(df.astype("string"), prefix_sep="=", sparse=sparse)
     encoded.columns = [str(column) for column in encoded.columns]
