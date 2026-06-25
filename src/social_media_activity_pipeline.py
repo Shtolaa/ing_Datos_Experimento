@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from contextlib import redirect_stderr, redirect_stdout
-from io import StringIO
 from pathlib import Path
 from typing import Iterable, Sequence
 
@@ -393,24 +391,6 @@ def validate_binary_matrix(binary_df: pd.DataFrame) -> dict[str, object]:
     }
 
 
-def binary_matrix_to_transactions(binary_df: pd.DataFrame) -> list[list[str]]:
-    """Convert a boolean matrix into transaction lists for Eclat."""
-    transactions: list[list[str]] = []
-    columns = binary_df.columns.to_numpy()
-
-    for row in binary_df.to_numpy(dtype=bool):
-        transactions.append(columns[row].tolist())
-
-    return transactions
-
-
-def transactions_to_dataframe(transactions: Sequence[Sequence[str]]) -> pd.DataFrame:
-    """Convert variable-length transactions to the dataframe shape used by pyECLAT."""
-    max_length = max((len(transaction) for transaction in transactions), default=0)
-    padded_rows = [list(transaction) + [np.nan] * (max_length - len(transaction)) for transaction in transactions]
-    return pd.DataFrame(padded_rows)
-
-
 def run_apriori_algorithm(binary_df: pd.DataFrame, min_support: float = 0.02) -> pd.DataFrame:
     """Run Apriori and return frequent itemsets in mlxtend format."""
     return apriori(binary_df, min_support=min_support, use_colnames=True)
@@ -419,52 +399,6 @@ def run_apriori_algorithm(binary_df: pd.DataFrame, min_support: float = 0.02) ->
 def run_fpgrowth_algorithm(binary_df: pd.DataFrame, min_support: float = 0.02) -> pd.DataFrame:
     """Run FP-Growth and return frequent itemsets in mlxtend format."""
     return fpgrowth(binary_df, min_support=min_support, use_colnames=True)
-
-
-def run_eclat_algorithm(
-    binary_df: pd.DataFrame,
-    min_support: float = 0.02,
-    min_combination: int = 1,
-    max_combination: int = 3,
-) -> pd.DataFrame:
-    """Run Eclat with pyECLAT and return itemsets in mlxtend-compatible format."""
-    try:
-        from pyECLAT import ECLAT
-    except ImportError as exc:
-        raise ImportError("Install pyECLAT in Colab with: !pip install -q pyECLAT") from exc
-
-    transactions = binary_matrix_to_transactions(binary_df)
-    transactions_df = transactions_to_dataframe(transactions)
-    try:
-        eclat_instance = ECLAT(data=transactions_df, verbose=False)
-    except TypeError:
-        eclat_instance = ECLAT(data=transactions_df)
-
-    with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
-        try:
-            _, supports = eclat_instance.fit(
-                min_support=min_support,
-                min_combination=min_combination,
-                max_combination=max_combination,
-                separator=" & ",
-                verbose=False,
-            )
-        except TypeError:
-            _, supports = eclat_instance.fit(
-                min_support=min_support,
-                min_combination=min_combination,
-                max_combination=max_combination,
-            )
-
-    rows = []
-    for itemset_text, support in supports.items():
-        if isinstance(itemset_text, str):
-            items = [item.strip() for item in itemset_text.split(" & ") if item.strip()]
-        else:
-            items = list(itemset_text)
-        rows.append({"support": float(support), "itemsets": frozenset(items)})
-
-    return pd.DataFrame(rows, columns=["support", "itemsets"])
 
 
 def generate_rules(
@@ -534,7 +468,6 @@ def run_algorithm_experiment(
     min_confidence: float = 0.4,
     min_lift: float = 1.0,
     target_column: str = TARGET_COLUMN,
-    eclat_max_combination: int = 3,
 ) -> dict[str, pd.DataFrame | str]:
     """Run one algorithm and return itemsets, rules, and target-related rules."""
     algorithm_key = normalize_name(algorithm)
@@ -544,12 +477,6 @@ def run_algorithm_experiment(
     elif algorithm_key in {"fp_growth", "fpgrowth"}:
         itemsets = run_fpgrowth_algorithm(binary_df, min_support=min_support)
         algorithm_key = "fp_growth"
-    elif algorithm_key == "eclat":
-        itemsets = run_eclat_algorithm(
-            binary_df,
-            min_support=min_support,
-            max_combination=eclat_max_combination,
-        )
     else:
         raise ValueError(f"Unsupported algorithm: {algorithm}")
 
@@ -573,11 +500,10 @@ def run_all_algorithms(
     min_confidence: float = 0.4,
     min_lift: float = 1.0,
     target_column: str = TARGET_COLUMN,
-    eclat_max_combination: int = 3,
 ) -> dict[str, dict[str, pd.DataFrame | str]]:
-    """Run Apriori, FP-Growth, and Eclat with the same thresholds."""
+    """Run Apriori and FP-Growth with the same thresholds."""
     results = {}
-    for algorithm in ["apriori", "fp_growth", "eclat"]:
+    for algorithm in ["apriori", "fp_growth"]:
         results[algorithm] = run_algorithm_experiment(
             binary_df=binary_df,
             algorithm=algorithm,
@@ -585,7 +511,6 @@ def run_all_algorithms(
             min_confidence=min_confidence,
             min_lift=min_lift,
             target_column=target_column,
-            eclat_max_combination=eclat_max_combination,
         )
     return results
 
