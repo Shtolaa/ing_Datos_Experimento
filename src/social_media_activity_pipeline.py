@@ -318,9 +318,9 @@ def _safe_interval_label(column: str, interval: pd.Interval | object) -> str:
 def discretize_numeric_columns(
     df: pd.DataFrame,
     columns: Iterable[str] | None = None,
-    max_bins: int = 10,
+    max_bins: int = 5,
 ) -> pd.DataFrame:
-    """Discretize numeric columns with quantiles, limited to max_bins bins."""
+    """Discretize numeric columns into equal-width intervals, limited to max_bins bins."""
     if max_bins < 2:
         raise ValueError("max_bins must be at least 2")
 
@@ -340,10 +340,7 @@ def discretize_numeric_columns(
             continue
 
         bins = min(max_bins, unique_count)
-        try:
-            discretized = pd.qcut(transformed[column], q=bins, duplicates="drop")
-        except ValueError:
-            discretized = pd.cut(transformed[column], bins=bins, duplicates="drop")
+        discretized = pd.cut(transformed[column], bins=bins, duplicates="drop")
 
         transformed[column] = discretized.map(lambda interval: _safe_interval_label(column, interval)).astype("string")
 
