@@ -375,11 +375,21 @@ def reduce_rare_categories(
     return reduced
 
 
-def create_binary_matrix(df: pd.DataFrame) -> pd.DataFrame:
-    """Create a dense boolean one-hot matrix compatible with mlxtend."""
-    encoded = pd.get_dummies(df.astype("string"), prefix_sep="=")
+def create_binary_matrix(df: pd.DataFrame, sparse: bool = True) -> pd.DataFrame:
+    """Create a boolean one-hot matrix compatible with mlxtend."""
+    encoded = pd.get_dummies(df.astype("string"), prefix_sep="=", sparse=sparse, dtype=bool)
     encoded.columns = [str(column) for column in encoded.columns]
-    return encoded.astype(bool)
+    return encoded if sparse else encoded.astype(bool)
+
+
+def prune_binary_matrix_by_support(binary_df: pd.DataFrame, min_support: float = 0.02) -> pd.DataFrame:
+    """Drop one-hot columns that cannot meet the selected minimum support."""
+    if not 0 <= min_support <= 1:
+        raise ValueError("min_support must be between 0 and 1")
+
+    supports = binary_df.mean(axis=0)
+    keep_columns = supports[supports >= min_support].index.tolist()
+    return binary_df.loc[:, keep_columns].copy()
 
 
 def validate_binary_matrix(binary_df: pd.DataFrame) -> dict[str, object]:
@@ -411,14 +421,22 @@ def transactions_to_dataframe(transactions: Sequence[Sequence[str]]) -> pd.DataF
     return pd.DataFrame(padded_rows)
 
 
-def run_apriori_algorithm(binary_df: pd.DataFrame, min_support: float = 0.02) -> pd.DataFrame:
+def run_apriori_algorithm(
+    binary_df: pd.DataFrame,
+    min_support: float = 0.02,
+    max_len: int | None = None,
+) -> pd.DataFrame:
     """Run Apriori and return frequent itemsets in mlxtend format."""
-    return apriori(binary_df, min_support=min_support, use_colnames=True)
+    return apriori(binary_df, min_support=min_support, use_colnames=True, max_len=max_len, low_memory=True)
 
 
-def run_fpgrowth_algorithm(binary_df: pd.DataFrame, min_support: float = 0.02) -> pd.DataFrame:
+def run_fpgrowth_algorithm(
+    binary_df: pd.DataFrame,
+    min_support: float = 0.02,
+    max_len: int | None = None,
+) -> pd.DataFrame:
     """Run FP-Growth and return frequent itemsets in mlxtend format."""
-    return fpgrowth(binary_df, min_support=min_support, use_colnames=True)
+    return fpgrowth(binary_df, min_support=min_support, use_colnames=True, max_len=max_len)
 
 
 def run_eclat_algorithm(
@@ -535,20 +553,24 @@ def run_algorithm_experiment(
     min_lift: float = 1.0,
     target_column: str = TARGET_COLUMN,
     eclat_max_combination: int = 3,
+    max_itemset_length: int | None = None,
 ) -> dict[str, pd.DataFrame | str]:
     """Run one algorithm and return itemsets, rules, and target-related rules."""
     algorithm_key = normalize_name(algorithm)
 
     if algorithm_key == "apriori":
-        itemsets = run_apriori_algorithm(binary_df, min_support=min_support)
+        itemsets = run_apriori_algorithm(binary_df, min_support=min_support, max_len=max_itemset_length)
     elif algorithm_key in {"fp_growth", "fpgrowth"}:
-        itemsets = run_fpgrowth_algorithm(binary_df, min_support=min_support)
+        itemsets = run_fpgrowth_algorithm(binary_df, min_support=min_support, max_len=max_itemset_length)
         algorithm_key = "fp_growth"
     elif algorithm_key == "eclat":
+        max_combination = eclat_max_combination
+        if max_itemset_length is not None:
+            max_combination = min(eclat_max_combination, max_itemset_length)
         itemsets = run_eclat_algorithm(
             binary_df,
             min_support=min_support,
-            max_combination=eclat_max_combination,
+            max_combination=max_combination,
         )
     else:
         raise ValueError(f"Unsupported algorithm: {algorithm}")
@@ -574,6 +596,7 @@ def run_all_algorithms(
     min_lift: float = 1.0,
     target_column: str = TARGET_COLUMN,
     eclat_max_combination: int = 3,
+    max_itemset_length: int | None = None,
 ) -> dict[str, dict[str, pd.DataFrame | str]]:
     """Run Apriori, FP-Growth, and Eclat with the same thresholds."""
     results = {}
@@ -586,6 +609,7 @@ def run_all_algorithms(
             min_lift=min_lift,
             target_column=target_column,
             eclat_max_combination=eclat_max_combination,
+            max_itemset_length=max_itemset_length,
         )
     return results
 
@@ -604,24 +628,32 @@ def summarize_algorithm_results(results: dict[str, dict[str, pd.DataFrame | str]
         if not isinstance(happiness_rules, pd.DataFrame):
             raise TypeError("Algorithm result must contain dataframe happiness_rules")
 
-        quality_source = happiness_rules if not happiness_rules.empty else rules
-        rows.append(
-            {
-                "algorithm": algorithm,
-                "frequent_itemsets_count": int(len(itemsets)),
-                "rules_count": int(len(rules)),
-                "happiness_rules_count": int(len(happiness_rules)),
-                "avg_support": _metric_mean(quality_source, "support"),
-                "avg_confidence": _metric_mean(quality_source, "confidence"),
-                "avg_lift": _metric_mean(quality_source, "lift"),
-                "max_lift": _metric_max(quality_source, "lift"),
-            }
-        )
+        rows.append(summarize_algorithm_result(algorithm, itemsets, rules, happiness_rules))
 
     return pd.DataFrame(rows).sort_values(
         ["happiness_rules_count", "avg_lift", "avg_confidence", "rules_count"],
         ascending=[False, False, False, False],
     )
+
+
+def summarize_algorithm_result(
+    algorithm: str,
+    itemsets: pd.DataFrame,
+    rules: pd.DataFrame,
+    happiness_rules: pd.DataFrame,
+) -> dict[str, str | int | float]:
+    """Return one quality-comparison row without retaining full algorithm output."""
+    quality_source = happiness_rules if not happiness_rules.empty else rules
+    return {
+        "algorithm": algorithm,
+        "frequent_itemsets_count": int(len(itemsets)),
+        "rules_count": int(len(rules)),
+        "happiness_rules_count": int(len(happiness_rules)),
+        "avg_support": _metric_mean(quality_source, "support"),
+        "avg_confidence": _metric_mean(quality_source, "confidence"),
+        "avg_lift": _metric_mean(quality_source, "lift"),
+        "max_lift": _metric_max(quality_source, "lift"),
+    }
 
 
 def choose_best_algorithm(summary: pd.DataFrame) -> str:
