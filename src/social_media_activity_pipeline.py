@@ -388,14 +388,22 @@ def validate_binary_matrix(binary_df: pd.DataFrame) -> dict[str, object]:
     }
 
 
-def run_apriori_algorithm(binary_df: pd.DataFrame, min_support: float = 0.02) -> pd.DataFrame:
+def run_apriori_algorithm(
+    binary_df: pd.DataFrame,
+    min_support: float = 0.02,
+    max_itemset_length: int | None = 3,
+) -> pd.DataFrame:
     """Run Apriori and return frequent itemsets in mlxtend format."""
-    return apriori(binary_df, min_support=min_support, use_colnames=True)
+    return apriori(binary_df, min_support=min_support, use_colnames=True, max_len=max_itemset_length)
 
 
-def run_fpgrowth_algorithm(binary_df: pd.DataFrame, min_support: float = 0.02) -> pd.DataFrame:
+def run_fpgrowth_algorithm(
+    binary_df: pd.DataFrame,
+    min_support: float = 0.02,
+    max_itemset_length: int | None = 3,
+) -> pd.DataFrame:
     """Run FP-Growth and return frequent itemsets in mlxtend format."""
-    return fpgrowth(binary_df, min_support=min_support, use_colnames=True)
+    return fpgrowth(binary_df, min_support=min_support, use_colnames=True, max_len=max_itemset_length)
 
 
 def generate_rules(
@@ -465,14 +473,23 @@ def run_algorithm_experiment(
     min_confidence: float = 0.4,
     min_lift: float = 1.0,
     target_column: str = TARGET_COLUMN,
+    max_itemset_length: int | None = 3,
 ) -> dict[str, pd.DataFrame | str]:
     """Run one algorithm and return itemsets, rules, and target-related rules."""
     algorithm_key = normalize_name(algorithm)
 
     if algorithm_key == "apriori":
-        itemsets = run_apriori_algorithm(binary_df, min_support=min_support)
+        itemsets = run_apriori_algorithm(
+            binary_df,
+            min_support=min_support,
+            max_itemset_length=max_itemset_length,
+        )
     elif algorithm_key in {"fp_growth", "fpgrowth"}:
-        itemsets = run_fpgrowth_algorithm(binary_df, min_support=min_support)
+        itemsets = run_fpgrowth_algorithm(
+            binary_df,
+            min_support=min_support,
+            max_itemset_length=max_itemset_length,
+        )
         algorithm_key = "fp_growth"
     else:
         raise ValueError(f"Unsupported algorithm: {algorithm}")
@@ -497,6 +514,7 @@ def run_all_algorithms(
     min_confidence: float = 0.4,
     min_lift: float = 1.0,
     target_column: str = TARGET_COLUMN,
+    max_itemset_length: int | None = 3,
 ) -> dict[str, dict[str, pd.DataFrame | str]]:
     """Run Apriori and FP-Growth with the same thresholds."""
     results = {}
@@ -508,6 +526,7 @@ def run_all_algorithms(
             min_confidence=min_confidence,
             min_lift=min_lift,
             target_column=target_column,
+            max_itemset_length=max_itemset_length,
         )
     return results
 
