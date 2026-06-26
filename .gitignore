@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+notebooks/.ipynb_checkpoints/
+
+data/
+outputs/
+archive.zip
+instagram_usage_lifestyle.csv
+AGENTS.md
