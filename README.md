@@ -399,16 +399,10 @@ data/
 
 La entrega P2+P3 requiere incluir una fotografia clara del poster fisico final hecho a mano sobre papel craft.
 
-Cuando la fotografia este disponible, agregarla al repositorio en la siguiente ruta:
+la fotografia esta disponible en la siguiente ruta:
 
 ```text
 docs/poster_final.jpg
-```
-
-Luego se puede visualizar desde esta seccion con la siguiente referencia:
-
-```markdown
-![Poster final](docs/poster_final.jpg)
 ```
 
 Contenido minimo que debe aparecer en el poster:
